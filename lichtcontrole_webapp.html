@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="nl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lichtcontrole - Kelderbeheer</title>
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            900: '#14532d',
+                        },
+                        darkbg: '#0f172a',
+                        cardbg: '#1e293b',
+                        borderbg: '#334155'
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.6);
+        }
+    </style>
+
+    <!-- Firebase SDKs (Compat/Modular hybrid approach for standalone browser compatibility) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-brand-500 selection:text-white">
+
+    <!-- LOGIN MODAL / SCREEN -->
+    <div id="login-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4">
+        <div class="glass-card w-full max-w-md p-8 rounded-2xl shadow-2xl border border-slate-700/60 relative">
+            
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-brand-500/10 text-brand-500 rounded-full flex items-center justify-center mx-auto mb-4 border border-brand-500/20 shadow-inner">
+                    <i class="fa-solid fa-lightbulb text-3xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-white tracking-wide">Beveiligde Lichtcontrole</h1>
+                <p class="text-slate-400 text-sm mt-1">Log in om de status van de kelderlampen te bekijken</p>
+            </div>
+
+            <!-- Warning/Notice Banner -->
+            <div id="login-error" class="hidden mb-4 p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-xs rounded-xl flex items-center gap-2">
+                <i class="fa-solid fa-triangle-exclamation text-base"></i>
+                <span id="login-error-msg">Ongeldige inloggegevens. Probeer opnieuw.</span>
+            </div>
+
+            <form id="login-form" class="space-y-4" onsubmit="handleLogin(event)">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">E-mailadres</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-envelope absolute left-4 top-3.5 text-slate-500"></i>
+                        <input type="email" id="email" value="admin@lichtcontrole.local" required class="w-full pl-11 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none text-slate-100 placeholder-slate-500 text-sm transition">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Wachtwoord</label>
+                    <div class="relative">
+                        <i class="fa-solid fa-lock absolute left-4 top-3.5 text-slate-500"></i>
+                        <input type="password" id="password" placeholder="••••••••" required class="w-full pl-11 pr-4 py-3 bg-slate-900/80 border border-slate-700 rounded-xl focus:ring-2 focus:ring-brand-500 focus:outline-none text-slate-100 placeholder-slate-500 text-sm transition">
+                    </div>
+                </div>
+
+                <button type="submit" id="btn-submit" class="w-full py-3.5 px-4 bg-brand-600 hover:bg-brand-500 text-white font-semibold rounded-xl shadow-lg shadow-brand-600/20 transition duration-200 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-right-to-bracket"></i>
+                    <span>Inloggen</span>
+                </button>
+            </form>
+
+            <div class="mt-6 pt-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+                <span>Demo modus zonder Firebase?</span>
+                <button type="button" onclick="enableDemoMode()" class="text-brand-500 font-semibold hover:underline">Start Simulatiedemo</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APP CONTAINER -->
+    <div id="app-container" class="opacity-30 pointer-events-none transition-all duration-300 flex-grow flex flex-col">
+        
+        <!-- HEADER / NAVIGATION -->
+        <header class="sticky top-0 z-40 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-4 lg:px-8 py-4">
+            <div class="max-w-7xl mx-auto flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 bg-brand-500/10 text-brand-500 rounded-xl flex items-center justify-center border border-brand-500/20">
+                        <i class="fa-solid fa-house-lightbulb text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-lg text-slate-100 leading-none">Lichtcontrole</h2>
+                        <span class="text-xs text-slate-400">Kelderbewaking System V1.0</span>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <nav class="hidden md:flex items-center gap-1 bg-slate-800/60 p-1.5 rounded-xl border border-slate-700/50 text-sm">
+                    <button onclick="switchTab('dashboard')" id="nav-dashboard" class="tab-btn active px-4 py-2 rounded-lg font-medium transition text-white bg-slate-700/80 shadow">
+                        <i class="fa-solid fa-chart-pie mr-2 text-brand-500"></i>Dashboard
+                    </button>
+                    <button onclick="switchTab('geschiedenis')" id="nav-geschiedenis" class="tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-clock-rotate-left mr-2"></i>Geschiedenis
+                    </button>
+                    <button onclick="switchTab('batterij')" id="nav-batterij" class="tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-battery-three-quarters mr-2"></i>Batterijen
+                    </button>
+                    <button onclick="switchTab('instellingen')" id="nav-instellingen" class="tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-400 hover:text-slate-200">
+                        <i class="fa-solid fa-gear mr-2"></i>Instellingen
+                    </button>
+                </nav>
+
+                <!-- User Profile & Status -->
+                <div class="flex items-center gap-3">
+                    <div class="hidden sm:flex flex-col text-right">
+                        <span id="user-display-email" class="text-xs font-semibold text-slate-300">Niet ingelogd</span>
+                        <span id="connection-status-badge" class="text-[10px] text-amber-400 flex items-center justify-end gap-1">
+                            <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Offline / Demo
+                        </span>
+                    </div>
+                    <button onclick="handleLogout()" title="Uitloggen" class="p-2.5 rounded-xl bg-slate-800 hover:bg-red-500/10 hover:text-red-400 text-slate-400 border border-slate-700 transition">
+                        <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Mobile Nav Bar -->
+            <div class="flex md:hidden items-center justify-around mt-4 pt-3 border-t border-slate-800 text-xs">
+                <button onclick="switchTab('dashboard')" id="mob-nav-dashboard" class="tab-btn-mob text-brand-500 font-semibold flex flex-col items-center gap-1">
+                    <i class="fa-solid fa-chart-pie text-lg"></i>Dashboard
+                </button>
+                <button onclick="switchTab('geschiedenis')" id="mob-nav-geschiedenis" class="tab-btn-mob text-slate-400 flex flex-col items-center gap-1">
+                    <i class="fa-solid fa-clock-rotate-left text-lg"></i>Historie
+                </button>
+                <button onclick="switchTab('batterij')" id="mob-nav-batterij" class="tab-btn-mob text-slate-400 flex flex-col items-center gap-1">
+                    <i class="fa-solid fa-battery-three-quarters text-lg"></i>Batterij
+                </button>
+                <button onclick="switchTab('instellingen')" id="mob-nav-instellingen" class="tab-btn-mob text-slate-400 flex flex-col items-center gap-1">
+                    <i class="fa-solid fa-gear text-lg"></i>Opties
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN CONTENT VIEW -->
+        <main class="flex-grow max-w-7xl w-full mx-auto p-4 lg:p-8">
+            
+            <!-- SECTION 1: DASHBOARD -->
+            <section id="section-dashboard" class="tab-content space-y-6">
+                <!-- Status Bar Top -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Laatste Meting Card -->
+                    <div class="glass-card p-5 rounded-2xl flex items-center gap-4">
+                        <div class="w-12 h-12 bg-blue-500/10 text-blue-400 rounded-xl flex items-center justify-center text-xl border border-blue-500/20">
+                            <i class="fa-regular fa-clock"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs text-slate-400 uppercase tracking-wider font-medium">Laatste Meting</span>
+                            <h3 id="dash-laatste-meting" class="text-lg font-bold text-slate-100">Laden...</h3>
+                            <span class="text-[11px] text-slate-500">Interval: elke <span id="dash-interval-val">15</span> min</span>
+                        </div>
+                    </div>
+
+                    <!-- Zender Status -->
+                    <div class="glass-card p-5 rounded-2xl flex items-center gap-4">
+                        <div class="w-12 h-12 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center text-xl border border-emerald-500/20">
+                            <i class="fa-solid fa-microchip"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs text-slate-400 uppercase tracking-wider font-medium">ESP32 Zender</span>
+                            <h3 class="text-lg font-bold text-emerald-400 flex items-center gap-2">
+                                Online <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+                            </h3>
+                            <span class="text-[11px] text-slate-500">LDR Sensoren actief</span>
+                        </div>
+                    </div>
+
+                    <!-- Batterij Sneloverzicht -->
+                    <div class="glass-card p-5 rounded-2xl flex items-center justify-center gap-4">
+                        <div class="w-12 h-12 bg-purple-500/10 text-purple-400 rounded-xl flex items-center justify-center text-xl border border-purple-500/20">
+                            <i class="fa-solid fa-battery-half"></i>
+                        </div>
+                        <div class="flex-grow">
+                            <span class="text-xs text-slate-400 uppercase tracking-wider font-medium">Gemiddelde Batterij</span>
+                            <h3 id="dash-avg-battery" class="text-lg font-bold text-slate-100">84%</h3>
+                            <span class="text-[11px] text-emerald-400">Status gezond</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lamps Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Lamp 1 Card -->
+                    <div class="glass-card p-6 rounded-2xl relative overflow-hidden transition hover:border-slate-600">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-3">
+                                <div id="lamp1-icon-bg" class="w-12 h-12 bg-amber-500/10 text-amber-400 rounded-xl flex items-center justify-center text-2xl border border-amber-500/20 transition-all">
+                                    <i class="fa-solid fa-lightbulb"></i>
+                                </div>
+                                <div>
+                                    <h4 id="lamp1-name-display" class="font-bold text-lg text-slate-100">Kelderlamp 1</h4>
+                                    <span class="text-xs text-slate-400">LDR Waarde: <span id="lamp1-waarde">--</span> lux</span>
+                                </div>
+                            </div>
+                            <span id="lamp1-badge" class="px-3 py-1.5 rounded-full text-xs font-bold tracking-wide bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                                AAN
+                            </span>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-slate-800/80 flex justify-between items-center text-xs text-slate-400">
+                            <span>Status update:</span>
+                            <span id="lamp1-last-change" class="font-mono text-slate-300">15 min geleden</span>
+                        </div>
+                    </div>
+
+                    <!-- Lamp 2 Card -->
+                    <div class="glass-card p-6 rounded-2xl relative overflow-hidden transition hover:border-slate-600">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-3">
+                                <div id="lamp2-icon-bg" class="w-12 h-12 bg-slate-800 text-slate-500 rounded-xl flex items-center justify-center text-2xl border border-slate-700 transition-all">
+                                    <i class="fa-regular fa-lightbulb"></i>
+                                </div>
+                                <div>
+                                    <h4 id="lamp2-name-display" class="font-bold text-lg text-slate-100">Kelderlamp 2</h4>
+                                    <span class="text-xs text-slate-400">LDR Waarde: <span id="lamp2-waarde">--</span> lux</span>
+                                </div>
+                            </div>
+                            <span id="lamp2-badge" class="px-3 py-1.5 rounded-full text-xs font-bold tracking-wide bg-slate-800 text-slate-400 border border-slate-700">
+                                UIT
+                            </span>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-slate-800/80 flex justify-between items-center text-xs text-slate-400">
+                            <span>Status update:</span>
+                            <span id="lamp2-last-change" class="font-mono text-slate-300">15 min geleden</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 2: GESCHIEDENIS -->
+            <section id="section-geschiedenis" class="tab-content hidden space-y-6">
+                <div class="glass-card p-6 rounded-2xl">
+                    <div class="flex items-center justify-between mb-6">
+                        <div>
+                            <h3 class="text-lg font-bold text-slate-100">Schakelgeschiedenis</h3>
+                            <p class="text-xs text-slate-400">Historisch overzicht van de LDR lichtmetingen</p>
+                        </div>
+                        <button onclick="clearHistoryLog()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg border border-slate-700">
+                            <i class="fa-solid fa-trash-can mr-1"></i> Wissen
+                        </button>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-300">
+                            <thead class="text-xs text-slate-400 uppercase bg-slate-800/50 border-b border-slate-700">
+                                <tr>
+                                    <th class="px-4 py-3 rounded-l-lg">Tijdstip</th>
+                                    <th class="px-4 py-3">Apparaat / Lamp</th>
+                                    <th class="px-4 py-3">Status</th>
+                                    <th class="px-4 py-3 rounded-r-lg">LDR Waarde</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body" class="divide-y divide-slate-800 font-mono text-xs">
+                                <tr>
+                                    <td class="px-4 py-3">2026-10-30 20:30:00</td>
+                                    <td class="px-4 py-3 text-slate-200">Kelderlamp 1</td>
+                                    <td class="px-4 py-3"><span class="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">AAN</span></td>
+                                    <td class="px-4 py-3">420 lux</td>
+                                </tr>
+                                <tr>
+                                    <td class="px-4 py-3">2026-10-30 20:30:00</td>
+                                    <td class="px-4 py-3 text-slate-200">Kelderlamp 2</td>
+                                    <td class="px-4 py-3"><span class="text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">UIT</span></td>
+                                    <td class="px-4 py-3">890 lux</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 3: BATTERIJMONITORING -->
+            <section id="section-batterij" class="tab-content hidden space-y-6">
+                <div class="glass-card p-6 rounded-2xl">
+                    <h3 class="text-lg font-bold text-slate-100 mb-1">Batterijmonitoring ESP32 Microcontrollers</h3>
+                    <p class="text-xs text-slate-400 mb-6">Alle 3 de apparaten werken op batterijen in deep sleep modus</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Zender Batterij -->
+                        <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-slate-200 text-sm">ESP32 Zender</span>
+                                <span id="bat-val-zender" class="font-mono text-sm font-bold text-emerald-400">85%</span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
+                                <div id="bat-bar-zender" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 85%;"></div>
+                            </div>
+                            <p class="text-[11px] text-slate-500">Status: Voldoende spanning (Li-Ion)</p>
+                        </div>
+
+                        <!-- Ontvanger 1 Batterij -->
+                        <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-slate-200 text-sm">Ontvanger 1 (LEDs)</span>
+                                <span id="bat-val-ontvanger1" class="font-mono text-sm font-bold text-emerald-400">90%</span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
+                                <div id="bat-bar-ontvanger1" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 90%;"></div>
+                            </div>
+                            <p class="text-[11px] text-slate-500">Status: Uitstekend</p>
+                        </div>
+
+                        <!-- Ontvanger 2 Batterij -->
+                        <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-slate-200 text-sm">Ontvanger 2 (LEDs)</span>
+                                <span id="bat-val-ontvanger2" class="font-mono text-sm font-bold text-emerald-400">78%</span>
+                            </div>
+                            <div class="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
+                                <div id="bat-bar-ontvanger2" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 78%;"></div>
+                            </div>
+                            <p class="text-[11px] text-slate-500">Status: Voldoende spanning</p>
+                        </div>
+                    </div>
+
+                    <!-- Warning Alert box if battery low -->
+                    <div id="battery-alert" class="hidden mt-6 p-4 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-xl text-xs flex items-center gap-3">
+                        <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                        <div>
+                            <strong class="font-bold">Waarschuwing Lage Batterij!</strong> Een of meerdere apparaten hebben minder dan 20% batterijcapaciteit over.
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 4: INSTELLINGEN -->
+            <section id="section-instellingen" class="tab-content hidden space-y-6">
+                <div class="glass-card p-6 rounded-2xl max-w-2xl">
+                    <h3 class="text-lg font-bold text-slate-100 mb-6 border-b border-slate-800 pb-3">Systeem Configuraties</h3>
+                    
+                    <form onsubmit="saveSettings(event)" class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1">Naam Kelderlamp 1</label>
+                            <input type="text" id="setting-lamp1-name" value="Kelderlamp 1" class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1">Naam Kelderlamp 2</label>
+                            <input type="text" id="setting-lamp2-name" value="Kelderlamp 2" class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-300 mb-1">Meetinterval (Minuten)</label>
+                            <select id="setting-interval" class="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                                <option value="5">5 minuten</option>
+                                <option value="15" selected>15 minuten (Aanbevolen voor batterij)</option>
+                                <option value="30">30 minuten</option>
+                                <option value="60">60 minuten</option>
+                            </select>
+                        </div>
+
+                        <div class="pt-4 border-t border-slate-800">
+                            <button type="submit" class="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold text-sm rounded-xl shadow-lg transition">
+                                Instellingen Opslaan
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Firebase Config Form Section -->
+                <div class="glass-card p-6 rounded-2xl max-w-2xl">
+                    <h3 class="text-lg font-bold text-slate-100 mb-2">Firebase Verbinding Instellen</h3>
+                    <p class="text-xs text-slate-400 mb-4">Vul hier je eigen Firebase Realtime Database parameters in indien nodig.</p>
+                    
+                    <div class="space-y-3">
+                        <input type="text" id="cfg-databaseurl" placeholder="https://lichtcontrole-xxxx-default-rtdb.europe-west1.firebasedatabase.app" class="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-200 font-mono">
+                        <button onclick="saveFirebaseCredentials()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 rounded-lg border border-slate-700">
+                            Firebase Sleutel Opslaan
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- FOOTER -->
+        <footer class="bg-slate-900/60 border-t border-slate-800/80 py-4 px-4 text-center text-xs text-slate-500">
+            <p>ESP32 Kelderlicht Controle Systeem &bull; Realtime Database Koppeling</p>
+        </footer>
+    </div>
+
+    <!-- JAVASCRIPT APPLICATION LOGIC -->
+    <script>
+        // GLOBAL STATE
+        let isDemoMode = false;
+        let dbRef = null;
+        let authObj = null;
+
+        // DEFAULT DATA STRUCTURE
+        let appState = {
+            lamp1: { status: "AAN", waarde: 420 },
+            lamp2: { status: "UIT", waarde: 890 },
+            laatste_meting: "2026-10-30 20:30:00",
+            batterij: { zender: 85, ontvanger1: 90, ontvanger2: 78 },
+            instellingen: { lamp1_naam: "Kelderlamp 1", lamp2_naam: "Kelderlamp 2", interval: 15 }
+        };
+
+        // INITIALIZATION
+        window.onload = function() {
+            // Check stored custom Firebase Database URL
+            const storedDbUrl = localStorage.getItem('rtdb_url');
+            if (storedDbUrl) {
+                document.getElementById('cfg-databaseurl').value = storedDbUrl;
+            }
+        };
+
+        // FIREBASE INITIALIZE LOGIC
+        function initFirebase(dbUrl) {
+            try {
+                // Default fallback configuration template
+                const firebaseConfig = {
+                    databaseURL: dbUrl || "https://lichtcontrole-ef3ef-default-rtdb.europe-west1.firebasedatabase.app"
+                };
+
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                
+                authObj = firebase.auth();
+                dbRef = firebase.database().ref();
+                return true;
+            } catch (err) {
+                console.error("Firebase Initialization error:", err);
+                return false;
+            }
+        }
+
+        // LOGIN HANDLER
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorBanner = document.getElementById('login-error');
+            const errorMsg = document.getElementById('login-error-msg');
+
+            errorBanner.classList.add('hidden');
+
+            const customUrl = document.getElementById('cfg-databaseurl').value.trim();
+            const initialized = initFirebase(customUrl);
+
+            if (!initialized) {
+                errorMsg.innerText = "Kon geen verbinding maken met Firebase SDK.";
+                errorBanner.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                // Attempt Firebase Auth Login
+                await authObj.signInWithEmailAndPassword(email, password);
+                
+                // On successful login
+                onLoginSuccess(email);
+                
+                // Subscribe to Realtime Updates
+                dbRef.on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        appState = { ...appState, ...data };
+                        updateUI();
+                    }
+                });
+
+            } catch (error) {
+                console.warn("Auth Login failed, prompting user or switching to demo mode", error);
+                errorMsg.innerText = "Inloggen mislukt: " + (error.message || "Controleer e-mail/wachtwoord.");
+                errorBanner.classList.remove('hidden');
+            }
+        }
+
+        // DEMO MODE HANDLER
+        function enableDemoMode() {
+            isDemoMode = true;
+            onLoginSuccess("admin@lichtcontrole.local (Demo)");
+            
+            // Simuleer periodieke data verandering
+            setInterval(() => {
+                const randomLux1 = Math.floor(Math.random() * 500) + 200;
+                const randomLux2 = Math.floor(Math.random() * 800) + 100;
+                appState.lamp1.waarde = randomLux1;
+                appState.lamp2.waarde = randomLux2;
+                
+                const now = new Date();
+                appState.laatste_meting = now.getFullYear() + '-' + 
+                    String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(now.getDate()).padStart(2, '0') + ' ' + 
+                    String(now.getHours()).padStart(2, '0') + ':' + 
+                    String(now.getMinutes()).padStart(2, '0') + ':' + 
+                    String(now.getSeconds()).padStart(2, '0');
+                
+                updateUI();
+            }, 8000);
+            
+            updateUI();
+        }
+
+        function onLoginSuccess(userEmail) {
+            document.getElementById('login-modal').classList.add('hidden');
+            const app = document.getElementById('app-container');
+            app.classList.remove('opacity-30', 'pointer-events-none');
+            
+            document.getElementById('user-display-email').innerText = userEmail;
+            const badge = document.getElementById('connection-status-badge');
+            
+            if (isDemoMode) {
+                badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span> Demo Modus';
+                badge.className = "text-[10px] text-amber-400 flex items-center justify-end gap-1";
+            } else {
+                badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Live Firebase';
+                badge.className = "text-[10px] text-emerald-400 flex items-center justify-end gap-1";
+            }
+        }
+
+        function handleLogout() {
+            if (authObj) {
+                authObj.signOut();
+            }
+            window.location.reload();
+        }
+
+        // UPDATE UI FROM STATE
+        function updateUI() {
+            // Update Laatste Meting
+            document.getElementById('dash-laatste-meting').innerText = appState.laatste_meting || '--';
+            document.getElementById('dash-interval-val').innerText = appState.instellingen?.interval || '15';
+
+            // Update Lamp 1
+            const lamp1On = appState.lamp1?.status === 'AAN';
+            document.getElementById('lamp1-waarde').innerText = appState.lamp1?.waarde ?? '--';
+            document.getElementById('lamp1-name-display').innerText = appState.instellingen?.lamp1_naam || "Kelderlamp 1";
+            const l1Badge = document.getElementById('lamp1-badge');
+            const l1Bg = document.getElementById('lamp1-icon-bg');
+            if (lamp1On) {
+                l1Badge.className = "px-3 py-1.5 rounded-full text-xs font-bold tracking-wide bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                l1Badge.innerText = "AAN";
+                l1Bg.className = "w-12 h-12 bg-amber-500/20 text-amber-300 rounded-xl flex items-center justify-center text-2xl border border-amber-500/40 shadow-lg shadow-amber-500/10";
+            } else {
+                l1Badge.className = "px-3 py-1.5 rounded-full text-xs font-bold tracking-wide bg-slate-800 text-slate-400 border border-slate-700";
+                l1Badge.innerText = "UIT";
+                l1Bg.className = "w-12 h-12 bg-slate-800 text-slate-500 rounded-xl flex items-center justify-center text-2xl border border-slate-700";
+            }
+
+            // Update Lamp 2
+            const lamp2On = appState.lamp2?.status === 'AAN';
+            document.getElementById('lamp2-waarde').innerText = appState.lamp2?.waarde ?? '--';
+            document.getElementById('lamp2-name-display').innerText = appState.instellingen?.lamp2_naam || "Kelderlamp 2";
+            const l2Badge = document.getElementById('lamp2-badge');
+            const l2Bg = document.getElementById('lamp2-icon-bg');
+            if (lamp2On) {
+                l2Badge.className = "px-3 py-1.5 rounded-full text-xs font-bold tracking-wide bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                l2Badge.innerText = "AAN";
+                l2Bg.className = "w-12 h-12 bg-amber-500/20 text-amber-300 rounded-xl flex items-center justify-center text-2xl border border-amber-500/40 shadow-lg shadow-amber-500/10";
+            } else {
+                l2Badge.className = "px-3 py-1.5 rounded-full text-xs font-bold tracking-wide bg-slate-800 text-slate-400 border border-slate-700";
+                l2Badge.innerText = "UIT";
+                l2Bg.className = "w-12 h-12 bg-slate-800 text-slate-500 rounded-xl flex items-center justify-center text-2xl border border-slate-700";
+            }
+
+            // Update Batteries
+            const batZender = appState.batterij?.zender ?? 100;
+            const batO1 = appState.batterij?.ontvanger1 ?? 100;
+            const batO2 = appState.batterij?.ontvanger2 ?? 100;
+
+            updateBatteryBar('zender', batZender);
+            updateBatteryBar('ontvanger1', batO1);
+            updateBatteryBar('ontvanger2', batO2);
+
+            const avgBat = Math.round((batZender + batO1 + batO2) / 3);
+            document.getElementById('dash-avg-battery').innerText = avgBat + '%';
+
+            // Show alert if any battery < 20
+            const alertBox = document.getElementById('battery-alert');
+            if (batZender < 20 || batO1 < 20 || batO2 < 20) {
+                alertBox.classList.remove('hidden');
+            } else {
+                alertBox.classList.add('hidden');
+            }
+        }
+
+        function updateBatteryBar(id, value) {
+            document.getElementById(`bat-val-${id}`).innerText = value + '%';
+            const bar = document.getElementById(`bat-bar-${id}`);
+            bar.style.width = value + '%';
+            
+            if (value < 20) {
+                bar.className = "bg-red-500 h-full rounded-full transition-all duration-500";
+            } else if (value < 50) {
+                bar.className = "bg-amber-500 h-full rounded-full transition-all duration-500";
+            } else {
+                bar.className = "bg-emerald-500 h-full rounded-full transition-all duration-500";
+            }
+        }
+
+        // TAB NAVIGATION
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            
+            // Show selected tab
+            document.getElementById(`section-${tabName}`).classList.remove('hidden');
+
+            // Reset navigation states
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.className = "tab-btn px-4 py-2 rounded-lg font-medium transition text-slate-400 hover:text-slate-200";
+            });
+            document.querySelectorAll('.tab-btn-mob').forEach(btn => {
+                btn.className = "tab-btn-mob text-slate-400 flex flex-col items-center gap-1";
+            });
+
+            // Activate button
+            const activeNav = document.getElementById(`nav-${tabName}`);
+            if (activeNav) {
+                activeNav.className = "tab-btn active px-4 py-2 rounded-lg font-medium transition text-white bg-slate-700/80 shadow";
+            }
+            const activeMobNav = document.getElementById(`mob-nav-${tabName}`);
+            if (activeMobNav) {
+                activeMobNav.className = "tab-btn-mob text-brand-500 font-semibold flex flex-col items-center gap-1";
+            }
+        }
+
+        // SAVE SETTINGS TO STATE / FIREBASE
+        function saveSettings(e) {
+            e.preventDefault();
+            const l1Name = document.getElementById('setting-lamp1-name').value;
+            const l2Name = document.getElementById('setting-lamp2-name').value;
+            const interval = document.getElementById('setting-interval').value;
+
+            appState.instellingen = {
+                lamp1_naam: l1Name,
+                lamp2_naam: l2Name,
+                interval: parseInt(interval)
+            };
+
+            if (dbRef && !isDemoMode) {
+                dbRef.child('instellingen').set(appState.instellingen);
+            }
+            
+            updateUI();
+            alert("Instellingen succesvol opgeslagen!");
+        }
+
+        function saveFirebaseCredentials() {
+            const url = document.getElementById('cfg-databaseurl').value.trim();
+            if (url) {
+                localStorage.setItem('rtdb_url', url);
+                alert("Firebase URL opgeslagen! Herlaad de pagina om te verbinden.");
+            }
+        }
+
+        function clearHistoryLog() {
+            document.getElementById('history-table-body').innerHTML = `
+                <tr>
+                    <td colspan="4" class="px-4 py-4 text-center text-slate-500 font-sans">Geen historie gegevens beschikbaar</td>
+                </tr>
+            `;
+        }
+    </script>
+</body>
+</html>
